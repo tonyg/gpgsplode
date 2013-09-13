@@ -168,8 +168,13 @@ class App:
             title="Subcommands",
             description="gpgsplode can perform any one of a few related tasks.")
 
+        parser.add_argument('-g', '--gnupg-home',
+                            required=True,
+                            metavar='DIRECTORY',
+                            help="Location of keyrings to use. Your main keyrings are in ~/.gnupg/.")
         parser.add_argument('-d', '--directory',
                             required=True,
+                            metavar='DIRECTORY',
                             help="File system directory to use when exporting/importing.")
         parser.add_argument('-p', '--include-public-keys',
                             action='store_true', default=True,
@@ -189,6 +194,15 @@ class App:
         self.version = '1.0'
         self.config = parser.parse_args(argv)
         self._keyrings = None
+
+        self.setup_gnupghome()
+
+    def setup_gnupghome(self):
+        if not os.path.isdir(self.config.gnupg_home):
+            raise AppError('Selected $GNUPGHOME directory "%s" missing or not a directory.' %
+                           (self.config.gnupg_home,))
+        print 'Using $GNUPGHOME="%s".' % (self.config.gnupg_home,)
+        os.environ['GNUPGHOME'] = self.config.gnupg_home
 
     def keyrings(self):
         if self._keyrings is None:
