@@ -122,11 +122,13 @@ class Keyring:
     def __init__(self, name, list_option):
         self.name = name
         lines = sc2(["gpg", list_option, "--keyid-format", "long"])[0].split('\n')
-        if lines[0][0] != '/':
-            raise Exception("Could not detect keyring name at start of gpg output")
-        self.keyring_path = lines[0]
-        if not re.match('-+', lines[1]): raise Exception("Could not understand gpg output")
-        self.blocks = [Block(g) for g in Grouplines(lines[2:]).groups]
+        if len(lines) < 2:
+            self.blocks = []
+        else:
+            if lines[0][0] != '/':
+                raise AppError("Could not detect keyring name at start of gpg output")
+            if not re.match('-+', lines[1]): raise AppError("Could not understand gpg output")
+            self.blocks = [Block(g) for g in Grouplines(lines[2:]).groups]
 
 class Ownertrust:
     def __init__(self):
@@ -244,7 +246,7 @@ class App:
 
         self.write_meta()
         for ring in self.keyrings():
-            print 'Keyring %s (%s)...' % (ring.name, ring.keyring_path)
+            print 'Keyring %s...' % (ring.name,)
             self.safe_makedirs(self.dbfilename(ring.name))
             for b in ring.blocks:
                 print '  key', b.exportfilename()
