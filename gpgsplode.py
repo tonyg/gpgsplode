@@ -21,6 +21,7 @@ import subprocess
 import re
 import argparse
 import json
+import glob
 
 class AppError(Exception): pass
 
@@ -53,8 +54,8 @@ def sc2internal(cmd, shell,
     if not output: output = ''
     if not errors: errors = ''
     if p.returncode and not ignoreResult:
-        # print "stdout:", output.rstrip()
-        # print "stderr:", errors.rstrip()
+        print "stdout:", output.rstrip()
+        print "stderr:", errors.rstrip()
         raise subprocess.CalledProcessError(p.returncode, cmd)
     if stripResult:
         return (output.strip(), errors.strip())
@@ -125,10 +126,12 @@ class Keyring:
         if len(lines) < 2:
             self.blocks = []
         else:
-            if lines[0][0] != '/':
-                raise AppError("Could not detect keyring name at start of gpg output")
+            # ignore lines[0] for now
             if not re.match('-+', lines[1]): raise AppError("Could not understand gpg output")
             self.blocks = [Block(g) for g in Grouplines(lines[2:]).groups]
+
+    def exportdirname(self):
+        return self.name
 
 class Ownertrust:
     def __init__(self):
@@ -138,7 +141,7 @@ class Ownertrust:
         lines = [l for l in sc2(["gpg", "--export-ownertrust"])[0].split('\n')
                  if not l.startswith('#')]
         lines.sort()
-        return '\n'.join(lines)
+        return '\n'.join(lines) + '\n'
 
 ###########################################################################
 
@@ -182,6 +185,9 @@ class App:
         parser.add_argument('-s', '--include-secret-keys',
                             action='store_true', default=False,
                             help="Include secret keys when exporting/importing.")
+        parser.add_argument('-t', '--include-ownertrust',
+                            action='store_true', default=False,
+                            help="Include ownertrust when exporting/importing.")
 
         export_help = "Export keys from GPG's keyrings to a file system directory."
         p_export = subparsers.add_parser('export', description=export_help, help=export_help)
@@ -261,20 +267,40 @@ class App:
         self.write_meta()
         for ring in self.keyrings():
             print 'Keyring %s...' % (ring.name,)
-            self.safe_makedirs(self.dbfilename(ring.name))
+            self.safe_makedirs(self.dbfilename(ring.exportdirname()))
             for b in ring.blocks:
                 print '  key', b.exportfilename()
-                with self.dbfile(os.path.join(ring.name, b.exportfilename()), 'w') as f:
+                with self.dbfile(os.path.join(ring.exportdirname(), b.exportfilename()), 'w') as f:
                     f.write(b.exportstr())
 
-        print 'Exporting ownertrust.'
-        with self.dbfile('ownertrust', 'w') as f:
-            f.write(Ownertrust().exportstr())
+        if self.config.include_ownertrust:
+            print 'Exporting ownertrust.'
+            with self.dbfile('ownertrust', 'w') as f:
+                f.write(Ownertrust().exportstr())
 
         print 'Done!'
 
     def import_action(self):
+        print 'Importing GPG keyring(s).'
         self.check_meta(True)
+
+        for ring in self.keyrings():
+            print 'Keyring %s...' % (ring.name,)
+            if os.path.isdir(self.dbfilename(ring.exportdirname())):
+                for fn in glob.glob(self.dbfilename(os.path.join(ring.exportdirname(), '*.asc'))):
+                    print '  key', os.path.basename(fn)
+                    (output, errors) = sc2(["gpg", "-q", "--import", fn], ignoreResult = True)
+                    if errors: print errors
+            else:
+                print '  (keyring directory not present)'
+
+        if self.config.include_ownertrust:
+            print 'Importing ownertrust.'
+            if os.path.exists(self.dbfilename('ownertrust')):
+                (output, errors) = \
+                    sc2(["gpg", "--import-ownertrust", self.dbfilename('ownertrust')],
+                        ignoreResult = True)
+                if errors: print errors
 
 if __name__ == '__main__':
     try:
