@@ -22,6 +22,8 @@ import re
 import argparse
 import json
 
+class AppError(Exception): pass
+
 ###########################################################################
 # Shelling out to the system flexibly.
 #
@@ -103,7 +105,7 @@ class Block:
     def export_option(self):
         if self.keytype == 'pub': return "--export"
         if self.keytype == 'sec': return "--export-secret-keys"
-        raise Exception("Cannot export key of unknown keytype '%s'" % (self.keytype,))
+        raise AppError("Cannot export key of unknown keytype '%s'" % (self.keytype,))
 
     def armor(self):
         if self._armor is None:
@@ -208,7 +210,8 @@ class App:
         if os.path.exists(path):
             if os.path.isdir(path):
                 return
-            raise Exception('Cannot create directory %s, as there is something in the way')
+            raise AppError('Cannot create directory "%s", as there is something in the way' %
+                           (path,))
         os.makedirs(path)
 
     def check_meta(self, require_meta):
@@ -218,11 +221,11 @@ class App:
         except IOError:
             if not require_meta:
                 return
-            raise Exception('Could not read %s' % (self.dbfilename('gpgsplode_meta'),))
+            raise AppError('Could not read %s' % (self.dbfilename('gpgsplode_meta'),))
 
         if meta['version'] != self.version:
-            raise Exception('Database in %s claims version %s, but we are version %s' %
-                            (self.config.directory, meta['version'], self.version))
+            raise AppError('Database in %s claims version %s, but we are version %s' %
+                           (self.config.directory, meta['version'], self.version))
 
     def write_meta(self):
         with self.dbfile('gpgsplode_meta', 'w') as f:
@@ -258,4 +261,9 @@ class App:
         self.check_meta(True)
 
 if __name__ == '__main__':
-    App(sys.argv[1:]).run()
+    try:
+        App(sys.argv[1:]).run()
+    except AppError, ae:
+        print ae.message
+        sys.exit(1)
+    sys.exit(0)
